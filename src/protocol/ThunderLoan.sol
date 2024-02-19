@@ -95,11 +95,15 @@ contract ThunderLoan is Initializable, OwnableUpgradeable, UUPSUpgradeable, Orac
                             STATE VARIABLES
     //////////////////////////////////////////////////////////////*/
     mapping(IERC20 => AssetToken) public s_tokenToAssetToken;
+    // e I think maps the underlying token to its asset token
+    // If the liquidity provider deposit `USDC` then he will be minted with `USDCAssetToken`
 
     // The fee in WEI, it should have 18 decimals. Each flash loan takes a flat fee of the token price.
+    // @audit-info this should be constant or immutable
     uint256 private s_feePrecision;
     uint256 private s_flashLoanFee; // 0.3% ETH fee
 
+    // e probably a mapping that tells us if a token is in the middle of a flash loan.
     mapping(IERC20 token => bool currentlyFlashLoaning) private s_currentlyFlashLoaning;
 
     /*//////////////////////////////////////////////////////////////
@@ -148,20 +152,29 @@ contract ThunderLoan is Initializable, OwnableUpgradeable, UUPSUpgradeable, Orac
     function initialize(address tswapAddress) external initializer {
         __Ownable_init(msg.sender);
         __UUPSUpgradeable_init();
-        __Oracle_init(tswapAddress);
+        __Oracle_init(tswapAddress); // e using tswap as some kind of oracle
         // @audit-info magic numbers
         s_feePrecision = 1e18;
         s_flashLoanFee = 3e15; // 0.3% ETH fee
     }
 
+    // @audit-info missing natspec
     function deposit(IERC20 token, uint256 amount) external revertIfZero(amount) revertIfNotAllowedToken(token) {
-        AssetToken assetToken = s_tokenToAssetToken[token];
+        AssetToken assetToken = s_tokenToAssetToken[token]; // e represent the shares of the pool
         uint256 exchangeRate = assetToken.getExchangeRate();
         uint256 mintAmount = (amount * assetToken.EXCHANGE_RATE_PRECISION()) / exchangeRate;
+        // e amount = 100 USDC
+        // 100e18 * 1e18 / 2e18 = 50e18;
+        // e this should never be 0 because of the asset token conditional
         emit Deposit(msg.sender, token, amount);
         assetToken.mint(msg.sender, mintAmount);
+
+        // @audit-followup this seems sus
+        // q why are we calculating the fees of flash loans in the deposit???
         uint256 calculatedFee = getCalculatedFee(token, amount);
         assetToken.updateExchangeRate(calculatedFee);
+
+        // e when a liquidity provider deposits, the Liquidity Token sits in the assetToken contract.
         token.safeTransferFrom(msg.sender, address(assetToken), amount);
     }
 
@@ -184,7 +197,6 @@ contract ThunderLoan is Initializable, OwnableUpgradeable, UUPSUpgradeable, Orac
         uint256 amountUnderlying = (amountOfAssetToken * exchangeRate) / assetToken.EXCHANGE_RATE_PRECISION();
         emit Redeemed(msg.sender, token, amountOfAssetToken, amountUnderlying);
         assetToken.burn(msg.sender, amountOfAssetToken);
-        // @follow-up reentrancy
         assetToken.transferUnderlyingTo(msg.sender, amountUnderlying);
     }
 
@@ -253,7 +265,7 @@ contract ThunderLoan is Initializable, OwnableUpgradeable, UUPSUpgradeable, Orac
     function setAllowedToken(IERC20 token, bool allowed) external onlyOwner returns (AssetToken) {
         if (allowed) {
             if (address(s_tokenToAssetToken[token]) != address(0)) {
-                revert ThunderLoan__AlreadyAllowed();
+                revert ThunderLoan__AlreadyAllowed(); // @audit-info revert with token address
             }
             string memory name = string.concat("ThunderLoan ", IERC20Metadata(address(token)).name());
             string memory symbol = string.concat("tl", IERC20Metadata(address(token)).symbol());
@@ -284,6 +296,7 @@ contract ThunderLoan is Initializable, OwnableUpgradeable, UUPSUpgradeable, Orac
         s_flashLoanFee = newFee;
     }
 
+    // q is it unset poorly?
     function isAllowedToken(IERC20 token) public view returns (bool) {
         return address(s_tokenToAssetToken[token]) != address(0);
     }
