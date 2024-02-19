@@ -140,6 +140,11 @@ contract ThunderLoan is Initializable, OwnableUpgradeable, UUPSUpgradeable, Orac
     /*//////////////////////////////////////////////////////////////
                            EXTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
+    // @audit-info change name to `poolFactoryAddress` instead of `tswapAddress`
+    // q what happens if we deploy the contract, and someone else initializes it?
+    // a that would suck
+    // They could pick a different `tswapAddress`
+    // @audit-low - initializers can be front run
     function initialize(address tswapAddress) external initializer {
         __Ownable_init(msg.sender);
         __UUPSUpgradeable_init();
