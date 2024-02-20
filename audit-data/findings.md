@@ -43,6 +43,7 @@ Lead Security Researches:
 - [Findings](#findings)
 	- [High](#high)
 		- [\[H-1\] Erroneous `ThunderLoan::updateExchangeRate` in the `deposit` function causes protocol to think it has more fees that it really does, which blocks redemption and incorrectly sets the exchange rate.](#h-1-erroneous-thunderloanupdateexchangerate-in-the-deposit-function-causes-protocol-to-think-it-has-more-fees-that-it-really-does-which-blocks-redemption-and-incorrectly-sets-the-exchange-rate)
+		- [\[H-2\] User can steal funds.](#h-2-user-can-steal-funds)
 	- [Medium](#medium)
 		- [\[M-1\] Using Tswap as price oracle leads to price and oracle manipulation attacks.](#m-1-using-tswap-as-price-oracle-leads-to-price-and-oracle-manipulation-attacks)
 	- [Informational](#informational)
@@ -173,6 +174,10 @@ Place the following into `ThunderLoanTest.t.sol`
         token.safeTransferFrom(msg.sender, address(assetToken), amount);
     }
 ```
+
+### [H-2] User can steal funds.
+
+<!-- Complete the writeup -->
 
 ## Medium
 
