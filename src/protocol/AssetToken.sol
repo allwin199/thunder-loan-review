@@ -24,7 +24,8 @@ contract AssetToken is ERC20 {
     // e underlying == USDC
     // e assetToken == shares
     // e similar to compound
-    // q what does this rate do?
+    // qa what does this rate do?
+    // a the rate between the underlying and the asset token
     uint256 private s_exchangeRate;
     uint256 public constant EXCHANGE_RATE_PRECISION = 1e18;
     uint256 private constant STARTING_EXCHANGE_RATE = 1e18;
@@ -59,7 +60,8 @@ contract AssetToken is ERC20 {
         address thunderLoan,
         IERC20 underlying, // e the token being deposited for flash loans
         // oh, are the ERC20s stored in AssetToken.sol instead of ThunderLoan?
-        // q where are the tokens stored?
+        // qa where are the tokens stored?
+        // a they are stored in the assetToken contract
         string memory assetName,
         string memory assetSymbol
     )
@@ -82,10 +84,10 @@ contract AssetToken is ERC20 {
     }
 
     function transferUnderlyingTo(address to, uint256 amount) external onlyThunderLoan {
-        // q weird erc20s?
-        // q what happens if USDC blacklist the thunderloan contract?
-        // q what happens if USDC blacklist the asset token contract?
-        // @follow-up, weird ERC20S with USDC
+        // qanswered weird erc20s?
+        // qanswered what happens if USDC blacklist the thunderloan contract?
+        // qanswered what happens if USDC blacklist the asset token contract?
+        // @audit-medium, the protocol will be frozen, and that would suck
         i_underlying.safeTransfer(to, amount);
     }
 
@@ -96,12 +98,10 @@ contract AssetToken is ERC20 {
         // 3. So if the fee is 1e18, and the total supply is 2e18, the exchange rate be multiplied by 1.5
         // if the fee is 0.5 ETH, and the total supply is 4, the exchange rate should be multiplied by 1.125
         // it should always go up, never down -> INVARIANT!!!
-        // q ok, but why?
         // newExchangeRate = oldExchangeRate * (totalSupply + fee) / totalSupply
         // newExchangeRate = 1 (4 + 0.5) / 4
         // newExchangeRate = 1.125
 
-        // q what if totalSupply is 0?
         // @audit-gas `s_exchangeRate` is read many times from storage, can be stored in memory
         uint256 newExchangeRate = s_exchangeRate * (totalSupply() + fee) / totalSupply();
 

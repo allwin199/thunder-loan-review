@@ -99,7 +99,7 @@ contract ThunderLoan is Initializable, OwnableUpgradeable, UUPSUpgradeable, Orac
     // If the liquidity provider deposit `USDC` then he will be minted with `USDCAssetToken`
 
     // The fee in WEI, it should have 18 decimals. Each flash loan takes a flat fee of the token price.
-    // @audit-info this should be constant or immutable
+    // @audit-info this should be constant/immutable
     uint256 private s_feePrecision;
     uint256 private s_flashLoanFee; // 0.3% ETH fee
 
@@ -145,7 +145,7 @@ contract ThunderLoan is Initializable, OwnableUpgradeable, UUPSUpgradeable, Orac
                            EXTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
     // @audit-info change name to `poolFactoryAddress` instead of `tswapAddress`
-    // q what happens if we deploy the contract, and someone else initializes it?
+    // qanswered what happens if we deploy the contract, and someone else initializes it?
     // a that would suck
     // They could pick a different `tswapAddress`
     // @audit-low - initializers can be front run
@@ -171,6 +171,7 @@ contract ThunderLoan is Initializable, OwnableUpgradeable, UUPSUpgradeable, Orac
 
         // @audit-followup this seems sus
         // q why are we calculating the fees of flash loans in the deposit???
+        // @audit-high updating the exchange rate messes up with the redeem
         uint256 calculatedFee = getCalculatedFee(token, amount);
         assetToken.updateExchangeRate(calculatedFee);
 
