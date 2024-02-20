@@ -200,11 +200,12 @@ contract ThunderLoan is Initializable, OwnableUpgradeable, UUPSUpgradeable, Orac
         assetToken.transferUnderlyingTo(msg.sender, amountUnderlying);
     }
 
+    // @audit-info missing natspec
     function flashloan(
-        address receiverAddress,
-        IERC20 token,
-        uint256 amount,
-        bytes calldata params
+        address receiverAddress, // e the address to get the flash loaned tokens
+        IERC20 token, // e the ERC20 to borrow
+        uint256 amount, // e the amount to borrow
+        bytes calldata params // q the parameters to call the receiverAddress with
     )
         external
         revertIfZero(amount)
@@ -217,10 +218,12 @@ contract ThunderLoan is Initializable, OwnableUpgradeable, UUPSUpgradeable, Orac
             revert ThunderLoan__NotEnoughTokenBalance(startingBalance, amount);
         }
 
+        // e make sure the reciverAddress is a smart contract
         if (receiverAddress.code.length == 0) {
             revert ThunderLoan__CallerIsNotContract();
         }
 
+        // e this is the fee of the flash loan
         uint256 fee = getCalculatedFee(token, amount);
         // slither-disable-next-line reentrancy-vulnerabilities-2 reentrancy-vulnerabilities-3
         // @follow-up reentrancy
@@ -254,6 +257,7 @@ contract ThunderLoan is Initializable, OwnableUpgradeable, UUPSUpgradeable, Orac
         s_currentlyFlashLoaning[token] = false;
     }
 
+    // @audit-info missing natspec
     function repay(IERC20 token, uint256 amount) public {
         if (!s_currentlyFlashLoaning[token]) {
             revert ThunderLoan__NotCurrentlyFlashLoaning();
@@ -262,6 +266,7 @@ contract ThunderLoan is Initializable, OwnableUpgradeable, UUPSUpgradeable, Orac
         token.safeTransferFrom(msg.sender, address(assetToken), amount);
     }
 
+    // @audit-info missing natspec
     function setAllowedToken(IERC20 token, bool allowed) external onlyOwner returns (AssetToken) {
         if (allowed) {
             if (address(s_tokenToAssetToken[token]) != address(0)) {
@@ -281,8 +286,13 @@ contract ThunderLoan is Initializable, OwnableUpgradeable, UUPSUpgradeable, Orac
         }
     }
 
+    // @audit-info missing natspec
+    // @param token the token being borrowed.
+    // @param amount the amount being borrowed.
     function getCalculatedFee(IERC20 token, uint256 amount) public view returns (uint256 fee) {
         //slither-disable-next-line divide-before-multiply
+        // e so this is why we need tswap!
+        // q is this correct?
         uint256 valueOfBorrowedToken = (amount * getPriceInWeth(address(token))) / s_feePrecision;
         //slither-disable-next-line divide-before-multiply
         fee = (valueOfBorrowedToken * s_flashLoanFee) / s_feePrecision;
@@ -296,7 +306,7 @@ contract ThunderLoan is Initializable, OwnableUpgradeable, UUPSUpgradeable, Orac
         s_flashLoanFee = newFee;
     }
 
-    // q is it unset poorly?
+    // q is it ever unset poorly?
     function isAllowedToken(IERC20 token) public view returns (bool) {
         return address(s_tokenToAssetToken[token]) != address(0);
     }

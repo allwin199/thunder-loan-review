@@ -23,6 +23,8 @@ contract OracleUpgradeable is Initializable {
     // reentrancy?
     function getPriceInWeth(address token) public view returns (uint256) {
         address swapPoolOfToken = IPoolFactory(s_poolFactory).getPool(token);
+        // e ignoring token decimals
+        // q what if the token has 6 decimals? is the price wrong?
         return ITSwapPool(swapPoolOfToken).getPriceOfOnePoolTokenInWeth();
     }
 
