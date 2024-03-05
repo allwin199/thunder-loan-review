@@ -61,7 +61,6 @@
 // ▐░░░░░░░░░░░▌▐░░░░░░░░░░░▌▐░▌       ▐░▌▐░▌      ▐░░▌
 //  ▀▀▀▀▀▀▀▀▀▀▀  ▀▀▀▀▀▀▀▀▀▀▀  ▀         ▀  ▀        ▀▀
 // SPDX-License-Identifier: AGPL-3.0-only
-
 pragma solidity 0.8.20;
 
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -74,8 +73,6 @@ import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils
 import { OracleUpgradeable } from "./OracleUpgradeable.sol";
 import { Address } from "@openzeppelin/contracts/utils/Address.sol";
 import { IFlashLoanReceiver } from "../interfaces/IFlashLoanReceiver.sol";
-// e should implement this interface
-// import {IThunderLoan} from "../interfaces/IThunderLoan.sol";
 
 contract ThunderLoan is Initializable, OwnableUpgradeable, UUPSUpgradeable, OracleUpgradeable {
     error ThunderLoan__NotAllowedToken(IERC20 token);
@@ -95,15 +92,11 @@ contract ThunderLoan is Initializable, OwnableUpgradeable, UUPSUpgradeable, Orac
                             STATE VARIABLES
     //////////////////////////////////////////////////////////////*/
     mapping(IERC20 => AssetToken) public s_tokenToAssetToken;
-    // e I think maps the underlying token to its asset token
-    // If the liquidity provider deposit `USDC` then he will be minted with `USDCAssetToken`
 
     // The fee in WEI, it should have 18 decimals. Each flash loan takes a flat fee of the token price.
-    // @audit-info this should be constant/immutable
     uint256 private s_feePrecision;
     uint256 private s_flashLoanFee; // 0.3% ETH fee
 
-    // e probably a mapping that tells us if a token is in the middle of a flash loan.
     mapping(IERC20 token => bool currentlyFlashLoaning) private s_currentlyFlashLoaning;
 
     /*//////////////////////////////////////////////////////////////
@@ -144,38 +137,22 @@ contract ThunderLoan is Initializable, OwnableUpgradeable, UUPSUpgradeable, Orac
     /*//////////////////////////////////////////////////////////////
                            EXTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
-    // @audit-info change name to `poolFactoryAddress` instead of `tswapAddress`
-    // qanswered what happens if we deploy the contract, and someone else initializes it?
-    // a that would suck
-    // They could pick a different `tswapAddress`
-    // @audit-low - initializers can be front run
     function initialize(address tswapAddress) external initializer {
         __Ownable_init(msg.sender);
         __UUPSUpgradeable_init();
-        __Oracle_init(tswapAddress); // e using tswap as some kind of oracle
-        // @audit-info magic numbers
+        __Oracle_init(tswapAddress);
         s_feePrecision = 1e18;
         s_flashLoanFee = 3e15; // 0.3% ETH fee
     }
 
-    // @audit-info missing natspec
     function deposit(IERC20 token, uint256 amount) external revertIfZero(amount) revertIfNotAllowedToken(token) {
-        AssetToken assetToken = s_tokenToAssetToken[token]; // e represent the shares of the pool
+        AssetToken assetToken = s_tokenToAssetToken[token];
         uint256 exchangeRate = assetToken.getExchangeRate();
         uint256 mintAmount = (amount * assetToken.EXCHANGE_RATE_PRECISION()) / exchangeRate;
-        // e amount = 100 USDC
-        // 100e18 * 1e18 / 2e18 = 50e18;
-        // e this should never be 0 because of the asset token conditional
         emit Deposit(msg.sender, token, amount);
         assetToken.mint(msg.sender, mintAmount);
-
-        // @audit-followup this seems sus
-        // q why are we calculating the fees of flash loans in the deposit???
-        // @audit-high updating the exchange rate messes up with the redeem
         uint256 calculatedFee = getCalculatedFee(token, amount);
         assetToken.updateExchangeRate(calculatedFee);
-
-        // e when a liquidity provider deposits, the Liquidity Token sits in the assetToken contract.
         token.safeTransferFrom(msg.sender, address(assetToken), amount);
     }
 
@@ -201,12 +178,11 @@ contract ThunderLoan is Initializable, OwnableUpgradeable, UUPSUpgradeable, Orac
         assetToken.transferUnderlyingTo(msg.sender, amountUnderlying);
     }
 
-    // @audit-info missing natspec
     function flashloan(
-        address receiverAddress, // e the address to get the flash loaned tokens
-        IERC20 token, // e the ERC20 to borrow
-        uint256 amount, // e the amount to borrow
-        bytes calldata params // q the parameters to call the receiverAddress with
+        address receiverAddress,
+        IERC20 token,
+        uint256 amount,
+        bytes calldata params
     )
         external
         revertIfZero(amount)
@@ -219,25 +195,19 @@ contract ThunderLoan is Initializable, OwnableUpgradeable, UUPSUpgradeable, Orac
             revert ThunderLoan__NotEnoughTokenBalance(startingBalance, amount);
         }
 
-        // e make sure the reciverAddress is a smart contract
         if (receiverAddress.code.length == 0) {
             revert ThunderLoan__CallerIsNotContract();
         }
 
-        // e this is the fee of the flash loan
         uint256 fee = getCalculatedFee(token, amount);
         // slither-disable-next-line reentrancy-vulnerabilities-2 reentrancy-vulnerabilities-3
-        // @follow-up reentrancy
         assetToken.updateExchangeRate(fee);
 
         emit FlashLoan(receiverAddress, token, amount, fee, params);
 
         s_currentlyFlashLoaning[token] = true;
         assetToken.transferUnderlyingTo(receiverAddress, amount);
-        // @audit-info messed up the silther disables.
         // slither-disable-next-line unused-return reentrancy-vulnerabilities-2
-        // @follow-up reentrancy
-        // @follow-up do we need the return value of functionCall?
         receiverAddress.functionCall(
             abi.encodeCall(
                 IFlashLoanReceiver.executeOperation,
@@ -258,8 +228,6 @@ contract ThunderLoan is Initializable, OwnableUpgradeable, UUPSUpgradeable, Orac
         s_currentlyFlashLoaning[token] = false;
     }
 
-    // @audit-info missing natspec
-    // @audit-low you can't use repay to repay a flash loan inside another flash loan
     function repay(IERC20 token, uint256 amount) public {
         if (!s_currentlyFlashLoaning[token]) {
             revert ThunderLoan__NotCurrentlyFlashLoaning();
@@ -268,11 +236,10 @@ contract ThunderLoan is Initializable, OwnableUpgradeable, UUPSUpgradeable, Orac
         token.safeTransferFrom(msg.sender, address(assetToken), amount);
     }
 
-    // @audit-info missing natspec
     function setAllowedToken(IERC20 token, bool allowed) external onlyOwner returns (AssetToken) {
         if (allowed) {
             if (address(s_tokenToAssetToken[token]) != address(0)) {
-                revert ThunderLoan__AlreadyAllowed(); // @audit-info revert with token address
+                revert ThunderLoan__AlreadyAllowed();
             }
             string memory name = string.concat("ThunderLoan ", IERC20Metadata(address(token)).name());
             string memory symbol = string.concat("tl", IERC20Metadata(address(token)).symbol());
@@ -288,14 +255,8 @@ contract ThunderLoan is Initializable, OwnableUpgradeable, UUPSUpgradeable, Orac
         }
     }
 
-    // @audit-info missing natspec
-    // @param token the token being borrowed.
-    // @param amount the amount being borrowed.
     function getCalculatedFee(IERC20 token, uint256 amount) public view returns (uint256 fee) {
         //slither-disable-next-line divide-before-multiply
-        // e so this is why we need tswap!
-        // q is this correct?
-        // @audit-high if the fee is going to be in the token, then the value should reflect that
         uint256 valueOfBorrowedToken = (amount * getPriceInWeth(address(token))) / s_feePrecision;
         //slither-disable-next-line divide-before-multiply
         fee = (valueOfBorrowedToken * s_flashLoanFee) / s_feePrecision;
@@ -305,16 +266,13 @@ contract ThunderLoan is Initializable, OwnableUpgradeable, UUPSUpgradeable, Orac
         if (newFee > s_feePrecision) {
             revert ThunderLoan__BadNewFee();
         }
-        //@audit-low must emit event after state change
         s_flashLoanFee = newFee;
     }
 
-    // q is it ever unset poorly?
     function isAllowedToken(IERC20 token) public view returns (bool) {
         return address(s_tokenToAssetToken[token]) != address(0);
     }
 
-    // @audit-info from aderyn
     function getAssetFromToken(IERC20 token) public view returns (AssetToken) {
         return s_tokenToAssetToken[token];
     }
