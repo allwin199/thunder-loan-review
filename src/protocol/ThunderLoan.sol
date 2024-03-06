@@ -101,7 +101,7 @@ contract ThunderLoan is Initializable, OwnableUpgradeable, UUPSUpgradeable, Orac
     mapping(IERC20 => AssetToken) public s_tokenToAssetToken;
 
     // The fee in WEI, it should have 18 decimals. Each flash loan takes a flat fee of the token price.
-    // @audit-info/gas `s_feePrecision` can be marked as immutable
+    // @audit-info/gas `s_feePrecision` should be marked as immutable
     uint256 private s_feePrecision;
     uint256 private s_flashLoanFee; // 0.3% ETH fee
 
@@ -146,10 +146,10 @@ contract ThunderLoan is Initializable, OwnableUpgradeable, UUPSUpgradeable, Orac
     /*//////////////////////////////////////////////////////////////
                            EXTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
-    // q what happens if we deploy it and someone initializes its
+    // qanswered what happens if we deploy it and someone initializes its
     // a they could pick a different tSwap address
     // @audit-low initializers can be front run
-    // To avoid this, call `initialize` with the same tx while deploying
+    // To avoid this, call `initialize` as soon as the contract deployed
     function initialize(address tswapAddress) external initializer {
         __Ownable_init(msg.sender);
         __UUPSUpgradeable_init();
@@ -163,9 +163,10 @@ contract ThunderLoan is Initializable, OwnableUpgradeable, UUPSUpgradeable, Orac
 
     // @audit-info missing natspec
     function deposit(IERC20 token, uint256 amount) external revertIfZero(amount) revertIfNotAllowedToken(token) {
-        // q how do the protocol keep track of which liquidity provided how many tokens
+        // qanswered how do the protocol keep track of which liquidity provided how many tokens
         // is it by the ratio of LP tokens
         // If a user has 1 assetToken then they have deposited 2 underlying token?
+        // a yes!
 
         // `s_tokenToAssetToken[token]` is initialized by `setAllowedToken`
         // e represents the shares of the pool
@@ -178,10 +179,12 @@ contract ThunderLoan is Initializable, OwnableUpgradeable, UUPSUpgradeable, Orac
         emit Deposit(msg.sender, token, amount);
         assetToken.mint(msg.sender, mintAmount);
 
-        // q why are we calculating the fees of flash loans in the deposit???
         uint256 calculatedFee = getCalculatedFee(token, amount);
 
-        // q why are we updating the exchange rate???
+        // @audit-high calling `updateExchangeRate` adds incorrect fee to the assetToken
+        // because we didn't get any extra fees
+        // which leads to severe disruption of protocol
+        // liquidators cannot redeem the deposit
         assetToken.updateExchangeRate(calculatedFee);
 
         // e when a liquidity provider deposits, the tokens stay in the assetToken contract and not in this contract
@@ -321,6 +324,16 @@ contract ThunderLoan is Initializable, OwnableUpgradeable, UUPSUpgradeable, Orac
         // `getPriceInWeth` this is why we need `TSwap`
         // to get the value of the borrowed token
         // we are calculating fee with `valueOfBorrowedToken`
+
+        // 1 USDC == 0.1 WETH
+        // which means value of 1 USDC in weth == 0.1
+        // but we are diving by `s_feePrecision`
+        // which has 18 decimals
+        // I completely didn't understand
+
+        // @audit-high If the fee is going to be in the token, then the value should reflect that
+        // IMPACT -> price are wrong // med/high
+        // LIKELIHOOD -> always // high
         uint256 valueOfBorrowedToken = (amount * getPriceInWeth(address(token))) / s_feePrecision;
         //slither-disable-next-line divide-before-multiply
         fee = (valueOfBorrowedToken * s_flashLoanFee) / s_feePrecision;

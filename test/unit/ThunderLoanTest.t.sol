@@ -74,6 +74,46 @@ contract ThunderLoanTest is BaseTest {
         assertEq(asset.balanceOf(liquidityProvider), AMOUNT);
     }
 
+    function test_LiquidatorCanRedeem() public setAllowedToken {
+        tokenA.mint(liquidityProvider, AMOUNT);
+
+        uint256 liquidatorBalanceBeforeDeposit = tokenA.balanceOf(liquidityProvider);
+
+        vm.startPrank(liquidityProvider);
+        tokenA.approve(address(thunderLoan), AMOUNT);
+        thunderLoan.deposit(tokenA, AMOUNT);
+        vm.stopPrank();
+
+        AssetToken asset = thunderLoan.getAssetFromToken(tokenA);
+
+        uint256 liquidatorBalanceAfterDeposit = asset.balanceOf(liquidityProvider);
+
+        // redeem
+        // since the liquidator is redeeming, the liquidator balance of this `tokenA` should be greater than or equal to
+        // the previous balance
+        // the reason it can be greater is because of echange rate
+
+        vm.startPrank(liquidityProvider);
+        thunderLoan.redeem(tokenA, AMOUNT);
+        vm.stopPrank();
+
+        uint256 liquidatorBalanceAfterRedeem = tokenA.balanceOf(liquidityProvider);
+
+        console2.log("liquidatorBalanceBeforeDeposit", liquidatorBalanceBeforeDeposit);
+        console2.log("liquidatorBalanceAfterDeposit ", liquidatorBalanceAfterDeposit);
+        console2.log("liquidatorBalanceAfterRedeem  ", liquidatorBalanceAfterRedeem);
+
+        // when a liquidator is calling redeem
+        // the liquidator should be able to withdraw the deposit
+        // but when the liquidator is depositing the token, `fee` is calculated and `updateExchangeRate` is called
+        // which increases the `totalSupply` variable. but the original balance will not go up
+        // because no one didn't take any flash loan and paid a fees
+        // Even if someone took out a flash loan and paid the fees
+        // still `totalSupply` value and `totalBalance` will not match
+        // all because of updating excahnge rate during deposit
+        // this will disrupt the protocol
+    }
+
     modifier hasDeposits() {
         vm.startPrank(liquidityProvider);
         tokenA.mint(liquidityProvider, DEPOSIT_AMOUNT);
@@ -93,6 +133,69 @@ contract ThunderLoanTest is BaseTest {
 
         assertEq(mockFlashLoanReceiver.getBalanceDuring(), amountToBorrow + AMOUNT);
         assertEq(mockFlashLoanReceiver.getBalanceAfter(), AMOUNT - calculatedFee);
+    }
+
+    function test_LiquidatorCanRedeem_AfterFlashLoan() public setAllowedToken {
+        tokenA.mint(liquidityProvider, DEPOSIT_AMOUNT);
+
+        uint256 liquidatorBalanceBeforeDeposit = tokenA.balanceOf(liquidityProvider);
+
+        vm.startPrank(liquidityProvider);
+        tokenA.approve(address(thunderLoan), DEPOSIT_AMOUNT);
+        thunderLoan.deposit(tokenA, DEPOSIT_AMOUNT);
+        vm.stopPrank();
+
+        AssetToken asset = thunderLoan.getAssetFromToken(tokenA);
+
+        uint256 liquidatorBalanceAfterDeposit = asset.balanceOf(liquidityProvider);
+
+        // flashloan
+        uint256 amountToBorrow = AMOUNT * 10;
+        uint256 calculatedFee = thunderLoan.getCalculatedFee(tokenA, amountToBorrow);
+
+        vm.startPrank(user);
+        // we are minting the `mockFlashLoanReceiver` will the `calculatedFee`
+        // so that it can pay the fees
+        tokenA.mint(address(mockFlashLoanReceiver), calculatedFee);
+        thunderLoan.flashloan(address(mockFlashLoanReceiver), tokenA, amountToBorrow, "");
+        vm.stopPrank();
+
+        // redeem
+        // since the liquidator is redeeming, the liquidator balance of this `tokenA` should be greater than or equal to
+        // the previous balance
+        // the reason it can be greater is because of echange rate
+
+        uint256 amountToRedeem = type(uint256).max;
+
+        vm.startPrank(liquidityProvider);
+        thunderLoan.redeem(tokenA, amountToRedeem);
+        vm.stopPrank();
+
+        uint256 liquidatorBalanceAfterRedeem = tokenA.balanceOf(liquidityProvider);
+
+        console2.log("liquidatorBalanceBeforeDeposit", liquidatorBalanceBeforeDeposit);
+        console2.log("liquidatorBalanceAfterDeposit ", liquidatorBalanceAfterDeposit);
+        console2.log("liquidatorBalanceAfterRedeem  ", liquidatorBalanceAfterRedeem);
+
+        // when a liquidator is calling redeem
+        // the liquidator should be able to withdraw the deposit
+        // but when the liquidator is depositing the token, `fee` is calculated and `updateExchangeRate` is called
+        // which increases the `totalSupply` variable. but the original balance will not go up
+        // because no one didn't take any flash loan and paid a fees
+        // Even if someone took out a flash loan and paid the fees
+        // still `totalSupply` value and `totalBalance` will not match
+        // all because of updating excahnge rate during deposit
+        // this will disrupt the protocol
+
+        // InitalDeposit by liquidator = 1000e18
+        // After someone took out a flash loan
+        // fee was accumulated
+        // which is 0.3e18
+        // total will be (1000e18 + 0.3e18)/1e18(for precision)
+        // 1000.3e18
+
+        // but while redeeming, the redeem amount exceeds the totalBalance of assetToken
+        // because of the `fee` and `updateExchangeRate` in deposit
     }
 
     function testRedeemAfterLoan() public setAllowedToken hasDeposits {

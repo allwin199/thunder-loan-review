@@ -16,7 +16,7 @@ interface IFlashLoanReceiver {
     // @audit-info missing natspec
     // qanswered amount is the amount of tokens? // a Yes!
     // qanswered fee is the fee of the protocol // a Yes!
-    // q what is params
+    // qanswered what is params
     // e whenever a flash loan is taken
     // I think `calldata` will be sent in this `params`
     // calldata will include go to different exchnage, do the arbritarge
