@@ -11,10 +11,11 @@ import { IThunderLoan } from "./IThunderLoan.sol";
  * https://github.com/aave/aave-v3-core/blob/master/contracts/flashloan/interfaces/IFlashLoanReceiver.sol
  */
 interface IFlashLoanReceiver {
-    // q is the token, the token being borrowed??
+    // qanswered is the token, the token being borrowed??
+    // a Yes!
     // @audit-info missing natspec
-    // q amount is the amount of tokens?
-    // q fee is the fee of the protocol
+    // qanswered amount is the amount of tokens? // a Yes!
+    // qanswered fee is the fee of the protocol // a Yes!
     // q what is params
     // e whenever a flash loan is taken
     // I think `calldata` will be sent in this `params`

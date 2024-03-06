@@ -67,6 +67,9 @@ import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.s
 import { AssetToken } from "./AssetToken.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+// this is onlyOwner contract, but this is upgradeable version
+// we need this fn, whenver `_authorizeUpgrade` should be called
+// it should be called by onlyOwner
 import { OwnableUpgradeable } from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
@@ -93,12 +96,16 @@ contract ThunderLoan is Initializable, OwnableUpgradeable, UUPSUpgradeable, Orac
     /*//////////////////////////////////////////////////////////////
                             STATE VARIABLES
     //////////////////////////////////////////////////////////////*/
+    // e I think this maps underlying token to asset token
+    // e If the LP deposited USDC then USDCAssetToken will represent the underlying deposit
     mapping(IERC20 => AssetToken) public s_tokenToAssetToken;
 
     // The fee in WEI, it should have 18 decimals. Each flash loan takes a flat fee of the token price.
+    // @audit-info/gas `s_feePrecision` can be marked as immutable
     uint256 private s_feePrecision;
     uint256 private s_flashLoanFee; // 0.3% ETH fee
 
+    // e probably a mapping that tells us if a token is in the middle of a flash loan
     mapping(IERC20 token => bool currentlyFlashLoaning) private s_currentlyFlashLoaning;
 
     /*//////////////////////////////////////////////////////////////
@@ -147,26 +154,45 @@ contract ThunderLoan is Initializable, OwnableUpgradeable, UUPSUpgradeable, Orac
         __Ownable_init(msg.sender);
         __UUPSUpgradeable_init();
         // @audit-info change name to `poolFactoryAddress` instead of `tswapAddress`
+        // e using tswap as some kind of oracle
         __Oracle_init(tswapAddress);
         // @audit-info magic numbers
         s_feePrecision = 1e18;
         s_flashLoanFee = 3e15; // 0.3% ETH fee
     }
 
+    // @audit-info missing natspec
     function deposit(IERC20 token, uint256 amount) external revertIfZero(amount) revertIfNotAllowedToken(token) {
+        // q how do the protocol keep track of which liquidity provided how many tokens
+        // is it by the ratio of LP tokens
+        // If a user has 1 assetToken then they have deposited 2 underlying token?
+
+        // `s_tokenToAssetToken[token]` is initialized by `setAllowedToken`
+        // e represents the shares of the pool
         AssetToken assetToken = s_tokenToAssetToken[token];
         uint256 exchangeRate = assetToken.getExchangeRate();
+        // amount = 100USDC
+        // (100e18 * 1e18) / 1e18 = 100e36 / 2e18 = 50e18
+        // `exchangeRate` should never be 0 because of the asset token conditional
         uint256 mintAmount = (amount * assetToken.EXCHANGE_RATE_PRECISION()) / exchangeRate;
         emit Deposit(msg.sender, token, amount);
         assetToken.mint(msg.sender, mintAmount);
+
+        // q why are we calculating the fees of flash loans in the deposit???
         uint256 calculatedFee = getCalculatedFee(token, amount);
+
+        // q why are we updating the exchange rate???
         assetToken.updateExchangeRate(calculatedFee);
+
+        // e when a liquidity provider deposits, the tokens stay in the assetToken contract and not in this contract
         token.safeTransferFrom(msg.sender, address(assetToken), amount);
     }
 
     /// @notice Withdraws the underlying token from the asset token
-    /// @param token The token they want to withdraw from
+    /// @param token The token they want to withdraw from // e the actual underlying token
     /// @param amountOfAssetToken The amount of the underlying they want to withdraw
+
+    // e If I have 10 assetToken for USDC, let me get my USDC based on the 10 asset token exchange rate
     function redeem(
         IERC20 token,
         uint256 amountOfAssetToken
@@ -177,39 +203,50 @@ contract ThunderLoan is Initializable, OwnableUpgradeable, UUPSUpgradeable, Orac
     {
         AssetToken assetToken = s_tokenToAssetToken[token];
         uint256 exchangeRate = assetToken.getExchangeRate();
+        // q If the `amountOfAssetToken` is too big then entire balance will be returned
         if (amountOfAssetToken == type(uint256).max) {
             amountOfAssetToken = assetToken.balanceOf(msg.sender);
         }
+
+        // If we want 1e18 and exchangeRate is 2e18
+        // 1e18 * 2e18 / 1e18 = 2e18
         uint256 amountUnderlying = (amountOfAssetToken * exchangeRate) / assetToken.EXCHANGE_RATE_PRECISION();
         emit Redeemed(msg.sender, token, amountOfAssetToken, amountUnderlying);
         assetToken.burn(msg.sender, amountOfAssetToken);
         assetToken.transferUnderlyingTo(msg.sender, amountUnderlying);
     }
 
+    // @audit-info missing natspec
     function flashloan(
-        address receiverAddress,
-        IERC20 token,
-        uint256 amount,
-        bytes calldata params
+        address receiverAddress, // e the address to get the flash loan tokens
+        IERC20 token, // e the erc20 token to borrow
+        uint256 amount, // e amount to borrow
+        bytes calldata params //e the parameters to call the reciver address with
     )
         external
         revertIfZero(amount)
         revertIfNotAllowedToken(token)
     {
+        // e get the underlying token
         AssetToken assetToken = s_tokenToAssetToken[token];
+
+        // e probably what we are going to use to check if the flashloan has been repaid
         uint256 startingBalance = IERC20(token).balanceOf(address(assetToken));
 
         if (amount > startingBalance) {
             revert ThunderLoan__NotEnoughTokenBalance(startingBalance, amount);
         }
 
+        // e flash loan should be called by a smart contract
         if (receiverAddress.code.length == 0) {
             revert ThunderLoan__CallerIsNotContract();
         }
 
+        // e this is probably the fee of the flash loan
         uint256 fee = getCalculatedFee(token, amount);
         // slither-disable-next-line reentrancy-vulnerabilities-2 reentrancy-vulnerabilities-3
         // @audit follow-up re-entrancy
+
         assetToken.updateExchangeRate(fee);
 
         emit FlashLoan(receiverAddress, token, amount, fee, params);
@@ -234,6 +271,8 @@ contract ThunderLoan is Initializable, OwnableUpgradeable, UUPSUpgradeable, Orac
         );
 
         uint256 endingBalance = token.balanceOf(address(assetToken));
+        // e since the borrower is paying the amount with fee
+        // e  ending balance should be higher than starting balance
         if (endingBalance < startingBalance + fee) {
             revert ThunderLoan__NotPaidBack(startingBalance + fee, endingBalance);
         }
@@ -248,9 +287,12 @@ contract ThunderLoan is Initializable, OwnableUpgradeable, UUPSUpgradeable, Orac
         token.safeTransferFrom(msg.sender, address(assetToken), amount);
     }
 
+    // @audit-info missing natspec
     function setAllowedToken(IERC20 token, bool allowed) external onlyOwner returns (AssetToken) {
         if (allowed) {
+            // e if the token is already allowed then revert
             if (address(s_tokenToAssetToken[token]) != address(0)) {
+                // @audit-info revert with `token`
                 revert ThunderLoan__AlreadyAllowed();
             }
             string memory name = string.concat("ThunderLoan ", IERC20Metadata(address(token)).name());
@@ -267,6 +309,7 @@ contract ThunderLoan is Initializable, OwnableUpgradeable, UUPSUpgradeable, Orac
         }
     }
 
+    // @audit-info missing natspec
     function getCalculatedFee(IERC20 token, uint256 amount) public view returns (uint256 fee) {
         //slither-disable-next-line divide-before-multiply
         uint256 valueOfBorrowedToken = (amount * getPriceInWeth(address(token))) / s_feePrecision;

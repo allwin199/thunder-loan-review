@@ -67,6 +67,9 @@ contract AssetToken is ERC20 {
     {
         i_thunderLoan = thunderLoan;
         i_underlying = underlying;
+        // @audit-high STARTING_EXCHANGE_RATE is 1e18
+        // but it should be 2e18
+        // according to `s_exchangeRate` explanation
         s_exchangeRate = STARTING_EXCHANGE_RATE;
     }
 
@@ -97,6 +100,42 @@ contract AssetToken is ERC20 {
         // newExchangeRate = oldExchangeRate * (totalSupply + fee) / totalSupply
         // newExchangeRate = 1 (4 + 0.5) / 4
         // newExchangeRate = 1.125
+
+        // e whenver someone takes a flash loan
+        // fee will be calculated for the flash loan
+        // then `updateExchangeRate` will be called to update the exchange rate,
+        // the reason we have to update the exchange rate is
+        // someone took out a flash loan and paid it back with fee
+        // that fee should go to the liquidity providers
+
+        // let's say newExchangeRate = 1.125
+        // totalSupply is 4
+        // 4 * `newExchangeRate`
+        // 4 * 1.125 = 4.5
+        // therfore for depositing 4 tokens
+        // this liquidator will get `0.5` tokens as profit if they withdraw right now
+        // let's say 2 people deposited same underlying with 2 tokens each
+        // then if they both withdraw they will get `0.25` tokens each
+
+        // let's say none of them withdraw
+        // one more flash loan was taken and fee was calculated and updateexchange rate is called
+        // we already know newExchangeRate was 4.5 previously
+        // which means that will the `oldExchangeRate` right now
+        // and totalSupply increased to 4.5 last time
+        // let's say fee is 0.5 again
+        // let's calculate the `newExchangeRate`
+        // newExchangeRate = oldExchangeRate * (totalSupply + fee) / totalSupply
+        // newExchangeRate = 1.125 * (4.5 + 0.5) / 4.5
+        // newExchangeRate = 1.25
+
+        // totalSupply is 4.5
+        // 4.5 * newExchangeRate
+        // totalSupply = 5.625
+        // this new totalSupply will be shared among all the liquidity providers
+        // this is how they make profit
+
+        // q what if totalSupply is 0 ?
+        // @audit-gas too many storage reads for `s_exchangeRate` -> cache it in memory
         uint256 newExchangeRate = s_exchangeRate * (totalSupply() + fee) / totalSupply();
 
         if (newExchangeRate <= s_exchangeRate) {
