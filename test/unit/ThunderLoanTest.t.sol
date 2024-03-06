@@ -213,7 +213,7 @@ contract ThunderLoanTest is BaseTest {
         vm.stopPrank();
     }
 
-    function test_OracleManipulation_ToIgnoreFees() public {
+    function testOracleManipulation_ToIgnoreFees() public {
         // 1. Setup Contracts
         thunderLoan = new ThunderLoan();
         tokenA = new ERC20Mock();

@@ -325,15 +325,11 @@ contract ThunderLoan is Initializable, OwnableUpgradeable, UUPSUpgradeable, Orac
         // to get the value of the borrowed token
         // we are calculating fee with `valueOfBorrowedToken`
 
-        // 1 USDC == 0.1 WETH
-        // which means value of 1 USDC in weth == 0.1
-        // but we are diving by `s_feePrecision`
-        // which has 18 decimals
-        // I completely didn't understand
-
         // @audit-high If the fee is going to be in the token, then the value should reflect that
         // IMPACT -> price are wrong // med/high
         // LIKELIHOOD -> always // high
+
+        // @audit-high
         uint256 valueOfBorrowedToken = (amount * getPriceInWeth(address(token))) / s_feePrecision;
         //slither-disable-next-line divide-before-multiply
         fee = (valueOfBorrowedToken * s_flashLoanFee) / s_feePrecision;

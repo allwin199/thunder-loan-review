@@ -1,34 +1,42 @@
----
-title: Protocol Audit Report
-author: Prince Allwin
-date: February 20, 2024
-header-includes:
-  - \usepackage{titling}
-  - \usepackage{graphicx}
----
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+    .full-page {
+        width:  100%;
+        height:  100vh; /* This will make the div take up the full viewport height */
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+    }
+    .full-page img {
+        max-width:  200;
+        max-height:  200;
+        margin-bottom: 5rem;
+    }
+    .full-page div{
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+    }
+</style>
+</head>
+<body>
 
-\begin{titlepage}
-    \centering
-    \begin{figure}[h]
-        \centering
-    \end{figure}
-    \vspace*{2cm}
-    {\Huge\bfseries Protocol Audit Report\par}
-    \vspace{1cm}
-    {\Large Version 1.0\par}
-    \vspace{2cm}
-    {\Large\itshape Prince Allwin\par}
-    \vfill
-    {\large \today\par}
-\end{titlepage}
+<div class="full-page">
+    <img src="./logo.svg" alt="Logo">
+    <div>
+    <h1>Thunder Loan Protocol Audit Report</h1>
+    <h3>Prepared by: Prince Allwin</h3>
+    </div>
+</div>
 
-\maketitle
+</body>
+</html>
 
 <!-- Your report starts here! -->
-
-Prepared by: [Prince Allwin]()
-Lead Security Researches: 
-- Prince Allwin
 
 # Table of Contents
 - [Table of Contents](#table-of-contents)
@@ -36,18 +44,18 @@ Lead Security Researches:
 - [Disclaimer](#disclaimer)
 - [Risk Classification](#risk-classification)
 - [Audit Details](#audit-details)
-	- [Scope](#scope)
-	- [Roles](#roles)
+  - [Scope](#scope)
+  - [Roles](#roles)
 - [Executive Summary](#executive-summary)
-	- [Issues found](#issues-found)
+  - [Issues found](#issues-found)
 - [Findings](#findings)
-	- [High](#high)
-		- [\[H-1\] Erroneous `ThunderLoan::updateExchangeRate` in the `deposit` function causes protocol to think it has more fees that it really does, which blocks redemption and incorrectly sets the exchange rate.](#h-1-erroneous-thunderloanupdateexchangerate-in-the-deposit-function-causes-protocol-to-think-it-has-more-fees-that-it-really-does-which-blocks-redemption-and-incorrectly-sets-the-exchange-rate)
-		- [\[H-2\] User can steal funds.](#h-2-user-can-steal-funds)
-		- [\[H-3\] Mixing up variable location causes storage collisons in `ThunderLoan::s_flashLoanFee` and `ThunderLoan::s_currentlyFlashLoaning`, freesing protocol.](#h-3-mixing-up-variable-location-causes-storage-collisons-in-thunderloans_flashloanfee-and-thunderloans_currentlyflashloaning-freesing-protocol)
-	- [Medium](#medium)
-		- [\[M-1\] Using Tswap as price oracle leads to price and oracle manipulation attacks.](#m-1-using-tswap-as-price-oracle-leads-to-price-and-oracle-manipulation-attacks)
-	- [Informational](#informational)
+  - [High](#high)
+    - [\[H-1\] Erroneous `ThunderLoan::updateExchangeRate` in the `deposit` function causes protocol to think it has more fees that it really does, which blocks redemption and incorrectly sets the exchange rate.](#h-1-erroneous-thunderloanupdateexchangerate-in-the-deposit-function-causes-protocol-to-think-it-has-more-fees-that-it-really-does-which-blocks-redemption-and-incorrectly-sets-the-exchange-rate)
+    - [\[H-2\] User can steal funds.](#h-2-user-can-steal-funds)
+    - [\[H-3\] Mixing up variable location causes storage collisons in `ThunderLoan::s_flashLoanFee` and `ThunderLoan::s_currentlyFlashLoaning`, freesing protocol.](#h-3-mixing-up-variable-location-causes-storage-collisons-in-thunderloans_flashloanfee-and-thunderloans_currentlyflashloaning-freesing-protocol)
+  - [Medium](#medium)
+    - [\[M-1\] Using Tswap as price oracle leads to price and oracle manipulation attacks.](#m-1-using-tswap-as-price-oracle-leads-to-price-and-oracle-manipulation-attacks)
+  - [Informational](#informational)
 
 # Protocol Summary
 
@@ -85,13 +93,13 @@ Commit Hash:
 
 | Severity | Number of issues found |
 | -------- | ---------------------- |
-| High     | 0                      |
-| Medium   | 0                      |
+| High     | 3                      |
+| Medium   | 1                      |
 | Low      | 0                      |
 | Gas      | 0                      |
 | Info     | 0                      |
 |          |                        |
-| Total    | 0                      |
+| Total    | 4                      |
 
 
 # Findings
@@ -158,7 +166,6 @@ Place the following into `ThunderLoanTest.t.sol`
 </details>
 
 **Recommended Mitigation:** Remove the incorrectly updated exchange rate lines from `deposit`
-
 
 ```diff
 	function deposit(IERC20 token, uint256 amount) external revertIfZero(amount) revertIfNotAllowedToken(token) {
