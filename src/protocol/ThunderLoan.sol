@@ -279,6 +279,10 @@ contract ThunderLoan is Initializable, OwnableUpgradeable, UUPSUpgradeable, Orac
         s_currentlyFlashLoaning[token] = false;
     }
 
+    // e this is what the contract expects users to repay the flash loan
+    // e users could just call transfer instead of calling this repay
+    // because if they call `transfer` for that underlying token from them to this contract
+    // balance will get updated and everything will look good
     function repay(IERC20 token, uint256 amount) public {
         if (!s_currentlyFlashLoaning[token]) {
             revert ThunderLoan__NotCurrentlyFlashLoaning();
@@ -310,8 +314,13 @@ contract ThunderLoan is Initializable, OwnableUpgradeable, UUPSUpgradeable, Orac
     }
 
     // @audit-info missing natspec
+    // @param token the token being borrowed
+    // @param amount the amount being borrowed
     function getCalculatedFee(IERC20 token, uint256 amount) public view returns (uint256 fee) {
         //slither-disable-next-line divide-before-multiply
+        // `getPriceInWeth` this is why we need `TSwap`
+        // to get the value of the borrowed token
+        // we are calculating fee with `valueOfBorrowedToken`
         uint256 valueOfBorrowedToken = (amount * getPriceInWeth(address(token))) / s_feePrecision;
         //slither-disable-next-line divide-before-multiply
         fee = (valueOfBorrowedToken * s_flashLoanFee) / s_feePrecision;
