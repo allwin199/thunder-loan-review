@@ -286,6 +286,7 @@ contract ThunderLoan is Initializable, OwnableUpgradeable, UUPSUpgradeable, Orac
     // e users could just call transfer instead of calling this repay
     // because if they call `transfer` for that underlying token from them to this contract
     // balance will get updated and everything will look good
+    // @audit-low you can't use repay to repay a flash loan inside another flash loan
     function repay(IERC20 token, uint256 amount) public {
         if (!s_currentlyFlashLoaning[token]) {
             revert ThunderLoan__NotCurrentlyFlashLoaning();

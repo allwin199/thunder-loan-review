@@ -55,7 +55,6 @@
     - [\[H-3\] Mixing up variable location causes storage collisons in `ThunderLoan::s_flashLoanFee` and `ThunderLoan::s_currentlyFlashLoaning`, freesing protocol.](#h-3-mixing-up-variable-location-causes-storage-collisons-in-thunderloans_flashloanfee-and-thunderloans_currentlyflashloaning-freesing-protocol)
   - [Medium](#medium)
     - [\[M-1\] Using Tswap as price oracle leads to price and oracle manipulation attacks.](#m-1-using-tswap-as-price-oracle-leads-to-price-and-oracle-manipulation-attacks)
-  - [Informational](#informational)
 
 # Protocol Summary
 
@@ -258,5 +257,3 @@ You can also see the storage layout difference by running `forge inspect Thunder
 ### [M-1] Using Tswap as price oracle leads to price and oracle manipulation attacks.
 
 <!-- Complete the writeup -->
-
-## Informational

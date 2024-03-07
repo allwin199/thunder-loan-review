@@ -33,7 +33,7 @@
 - since the pool is changed by this user
 - pool ratio will be `1:1000`
 - Now `10 USDC` == `0.01 WETH` (10/1000) == 0.01
-- So he bought `1 NFT` for `0.01 WETH`
+- So the user bought `1 NFT` for `0.01 WETH`
 - previously `1 NFT` was `1 WETH`
 - This user has manipulated the price and got the NFT for `0.01 WETH`
 - This user bought bunch of NFT and went to a differnt NFT marketplace 
@@ -45,8 +45,11 @@
 - `10 USDC` == `1 WETH`  
 - Then the user repaid the flash loan with fees
 
-- tldr The user bought bunch of NFT for cheap price and sold it at actual price and made money
+- Since the NFT protocol is using TSwap as price Oracle
+- By manipulating the TSwap, we can screw the price of NFT
+
+- tldr The user bought bunch of NFT for cheap price and sold it at actual price and made bunch of money
 
 ### Mock TSwap
 
-  
+- We have create a Mock Tswap to check whether we can tank the price and get cheaper fee.

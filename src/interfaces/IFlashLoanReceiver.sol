@@ -18,9 +18,12 @@ interface IFlashLoanReceiver {
     // qanswered fee is the fee of the protocol // a Yes!
     // qanswered what is params
     // e whenever a flash loan is taken
-    // I think `calldata` will be sent in this `params`
-    // calldata will include go to different exchnage, do the arbritarge
-    // then return back the flash loan with fee
+
+    // Note: to call a flash loan
+    // we need to setup a smart contract
+    // and that smart contract should inherit `IFlashLoanReceiver`
+    // whenever flashloan is called, `thunderLoan` contract will execute the `executeOperation` function
+    // for the calling contract
     function executeOperation(
         address token,
         uint256 amount,
