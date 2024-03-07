@@ -51,10 +51,10 @@
 - [Findings](#findings)
   - [High](#high)
     - [\[H-1\] Erroneous `ThunderLoan::updateExchangeRate` in the `deposit` function causes protocol to think it has more fees that it really does, which blocks redemption and incorrectly sets the exchange rate.](#h-1-erroneous-thunderloanupdateexchangerate-in-the-deposit-function-causes-protocol-to-think-it-has-more-fees-that-it-really-does-which-blocks-redemption-and-incorrectly-sets-the-exchange-rate)
-    - [\[H-2\] User can steal funds.](#h-2-user-can-steal-funds)
+    - [\[H-3\] By calling a flashloan and then `ThunderLoan::deposit` instead of `ThunderLoan::repay` users can steal all funds from the protocol](#h-3-by-calling-a-flashloan-and-then-thunderloandeposit-instead-of-thunderloanrepay-users-can-steal-all-funds-from-the-protocol)
     - [\[H-3\] Mixing up variable location causes storage collisons in `ThunderLoan::s_flashLoanFee` and `ThunderLoan::s_currentlyFlashLoaning`, freesing protocol.](#h-3-mixing-up-variable-location-causes-storage-collisons-in-thunderloans_flashloanfee-and-thunderloans_currentlyflashloaning-freesing-protocol)
   - [Medium](#medium)
-    - [\[M-1\] Using Tswap as price oracle leads to price and oracle manipulation attacks.](#m-1-using-tswap-as-price-oracle-leads-to-price-and-oracle-manipulation-attacks)
+    - [\[M-2\] Using TSwap as price oracle leads to price and oracle manipulation attacks](#m-2-using-tswap-as-price-oracle-leads-to-price-and-oracle-manipulation-attacks)
 
 # Protocol Summary
 
@@ -182,9 +182,22 @@ Place the following into `ThunderLoanTest.t.sol`
     }
 ```
 
-### [H-2] User can steal funds.
+### [H-3] By calling a flashloan and then `ThunderLoan::deposit` instead of `ThunderLoan::repay` users can steal all funds from the protocol
 
-<!-- Complete the writeup -->
+**Description:** Malicious user can call `ThunderLoan::flashloan` and take out a flashloan for the entire balance of the borrowed token then call `ThunderLoan::deposit` and desposit the entire balance with fee and then call `ThunderLoan::redeem` to redeem the entire balance.
+
+**Impact:** Lost in funds deposited by the liquidity providers.
+
+<details>
+
+<summary>Proof of Code</summary>
+
+- Test `testUseDepositInsteadOfRepayToStealFunds` from `ThunderLoanTest.t.sol`
+- Which will drain the entire balance of the borrwed asset
+
+<details>
+
+**Recommended Mitigation:** Add a check in `deposit()` to make it impossible to use it in the same block of the flash loan. For example registring the `block.number` in a variable in flashloan() and checking it in deposit().
 
 ### [H-3] Mixing up variable location causes storage collisons in `ThunderLoan::s_flashLoanFee` and `ThunderLoan::s_currentlyFlashLoaning`, freesing protocol.
 
@@ -254,6 +267,31 @@ You can also see the storage layout difference by running `forge inspect Thunder
 
 ## Medium
 
-### [M-1] Using Tswap as price oracle leads to price and oracle manipulation attacks.
+### [M-2] Using TSwap as price oracle leads to price and oracle manipulation attacks
 
-<!-- Complete the writeup -->
+**Description:** The TSwap protocol is a constant product formula based AMM (automated market maker). The price of a token is determined by how many reserves are on either side of the pool. Because of this, it is easy for malicious users to manipulate the price of a token by buying or selling a large amount of the token in the same transaction, essentially ignoring protocol fees. 
+
+**Impact:** Liquidity providers will drastically reduced fees for providing liquidity. 
+
+**Proof of Concept:** 
+
+The following all happens in 1 transaction. 
+
+1. User takes a flash loan from `ThunderLoan` for 1000 `tokenA`. They are charged the original fee `fee1`. During the flash loan, they do the following:
+   1. User sells 1000 `tokenA`, tanking the price. 
+   2. Instead of repaying right away, the user takes out another flash loan for another 1000 `tokenA`. 
+      1. Due to the fact that the way `ThunderLoan` calculates price based on the `TSwapPool` this second flash loan is substantially cheaper. 
+```javascript
+    function getPriceInWeth(address token) public view returns (uint256) {
+        address swapPoolOfToken = IPoolFactory(s_poolFactory).getPool(token);
+@>      return ITSwapPool(swapPoolOfToken).getPriceOfOnePoolTokenInWeth();
+    }
+```
+    3. The user then repays the first flash loan, and then repays the second flash loan.
+
+I have created a proof of code located in my `audit-data` folder. It is too large to include here. 
+
+Test name is `testOracleManipulation` inside `ThunderLoanTest.t.sol`
+
+**Recommended Mitigation:** Consider using a different price oracle mechanism, like a Chainlink price feed with a Uniswap TWAP fallback oracle. 
+
